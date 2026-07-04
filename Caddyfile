@@ -1,0 +1,38 @@
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+# FEN-1594 — isolated neobrutalism preview served on a liveplace.tv SUBPATH.
+# Traefik (Coolify) routes only Host(liveplace.tv) && PathPrefix(/preview/
+# fen-1580-neobrutalism) here and forwards the FULL path (no stripprefix), so
+# the static tree lives under /srv/preview/fen-1580-neobrutalism to match 1:1.
+:80 {
+	# noindex: the host-root robots.txt belongs to the LIVE app, so mark this
+	# subtree non-indexable per-response instead.
+	header X-Robots-Tag "noindex, nofollow"
+	# Same-origin as prod (liveplace.tv) → Convex/WS/auth are all 'self'. The
+	# extra allowances mirror the live edge (Twitch avatar CDN).
+	header Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://static-cdn.jtvnw.net; font-src 'self' data:; connect-src 'self' https://liveplace.tv wss://liveplace.tv"
+	header X-Content-Type-Options "nosniff"
+
+	# Container-internal healthcheck (Coolify hits this directly, not via Traefik).
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# The preview SPA. Real assets resolve on disk; unknown routes (SPA client
+	# router, e.g. /preview/fen-1580-neobrutalism/fenysk) fall back to index.html.
+	handle /preview/fen-1580-neobrutalism/* {
+		root * /srv
+		try_files {path} /preview/fen-1580-neobrutalism/index.html
+		file_server
+	}
+
+	# Nothing else should ever reach this container (Traefik only routes the
+	# prefix); answer defensively so a stray probe can't leak the live app.
+	handle {
+		respond "not found" 404
+	}
+}
